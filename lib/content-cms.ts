@@ -57,7 +57,7 @@ export const defaultCmsContent: CmsContent = {
     nameBn: process.env.NEXT_PUBLIC_SITE_NAME_BN || 'ISC Expo - Icon Skill & Career Expo',
     nameEn: process.env.NEXT_PUBLIC_SITE_NAME || 'ISC Expo - Icon Skill & Career Expo',
     tagline: 'সাফল্যের জন্য প্রস্তুতি',
-    logo: '/logo.jpeg',
+    logo: '/logo.svg',
     city: 'খুলনা',
     phone: '01784-176442',
     phoneHref: 'tel:+8801784176442',

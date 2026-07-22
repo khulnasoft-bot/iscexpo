@@ -17,7 +17,7 @@ export function SiteFooter() {
           <div className="col-span-1 md:col-span-1">
             <Link href="/" className="inline-flex items-center gap-2.5 mb-4">
               <img
-                src={site.logo || '/logo.png'}
+                src={site.logo || '/logo.svg'}
                 alt={site.nameBn}
                 width={140}
                 className="h-auto object-contain"

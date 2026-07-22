@@ -163,7 +163,7 @@ export default function SignUpPage() {
         <div className="relative z-10 max-w-md px-8 text-brand-foreground animate-fade-in-up">
           <div className="flex items-center gap-3 mb-8">
             <Image
-              src="/logo.png"
+              src="/logo.svg"
               alt={site.nameEn}
               width={48}
               height={30}
@@ -212,7 +212,7 @@ export default function SignUpPage() {
               className="mb-8 inline-flex items-center gap-2 lg:hidden"
             >
               <Image
-                src="/logo.png"
+                src="/logo.svg"
                 alt={site.nameEn}
                 width={36}
                 height={22}

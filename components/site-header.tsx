@@ -59,7 +59,7 @@ export function SiteHeader() {
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 md:py-4">
         <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
           <img
-            src={site.logo || '/logo.png'}
+            src={site.logo || '/logo.svg'}
             alt={site.nameBn}
             width={200}
             className="h-auto w-28 md:w-32 object-contain"

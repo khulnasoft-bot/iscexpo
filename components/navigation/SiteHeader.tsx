@@ -21,7 +21,7 @@ export function SiteHeader() {
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2.5">
         <Link href="/" className="flex items-center gap-2.5">
           <img
-            src={site.logo || '/logo.png'}
+            src={site.logo || '/logo.svg'}
             alt={site.nameBn}
             width={200}
             className="h-auto object-contain"
