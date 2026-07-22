@@ -10,6 +10,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Download,
+  ArrowUpDown,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { EnrollmentStatusBadge } from '@/components/ui/status-badge'
@@ -18,6 +20,7 @@ import { FilterBar } from '@/components/ui/filter-bar'
 import { EmptyState } from '@/components/ui/empty-state'
 import type { Enrollment, Course, Student } from './types'
 import { useToast } from '@/components/ui/toast'
+import { exportToCSV } from '@/lib/csv-export'
 
 const inputCls =
   'mt-1 block w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
@@ -65,6 +68,9 @@ export function EnrollmentsPanel({
 
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [courseFilter, setCourseFilter] = useState('all')
+  const [sortKey, setSortKey] = useState<string>('')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [showAdd, setShowAdd] = useState(false)
@@ -101,18 +107,33 @@ export function EnrollmentsPanel({
   const resetPage = useCallback(() => setPage(1), [])
 
   const activeCourses = courses.filter((c) => c.isActive)
-  const filtered = enrollments.filter((e) => {
-    if (filter && filter !== 'all' && e.status !== filter) return false
-    if (search) {
-      const q = search.toLowerCase()
-      return (
-        (e.userName || '').toLowerCase().includes(q) ||
-        (e.userPhone || '').toLowerCase().includes(q) ||
-        (e.courseTitle || '').toLowerCase().includes(q)
-      )
+  const filtered = useMemo(() => {
+    let result = enrollments.filter((e) => {
+      if (filter && filter !== 'all' && e.status !== filter) return false
+      if (courseFilter !== 'all' && e.courseId !== courseFilter) return false
+      if (search) {
+        const q = search.toLowerCase()
+        return (
+          (e.userName || '').toLowerCase().includes(q) ||
+          (e.userPhone || '').toLowerCase().includes(q) ||
+          (e.courseTitle || '').toLowerCase().includes(q)
+        )
+      }
+      return true
+    })
+    if (sortKey) {
+      result.sort((a, b) => {
+        let cmp = 0
+        if (sortKey === 'userName') cmp = (a.userName || '').localeCompare(b.userName || '')
+        else if (sortKey === 'courseTitle') cmp = (a.courseTitle || '').localeCompare(b.courseTitle || '')
+        else if (sortKey === 'status') cmp = a.status.localeCompare(b.status)
+        else if (sortKey === 'totalFee') cmp = a.totalFee - b.totalFee
+        else if (sortKey === 'dueAmount') cmp = a.dueAmount - b.dueAmount
+        return sortDir === 'asc' ? cmp : -cmp
+      })
     }
-    return true
-  })
+    return result
+  }, [enrollments, filter, courseFilter, search, sortKey, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -386,6 +407,31 @@ export function EnrollmentsPanel({
         <h3 className="font-heading text-lg font-bold text-foreground">
           {t('management')}
         </h3>
+        <div className="flex items-center gap-2">
+          {enrollments.length > 0 && (
+            <button
+              onClick={() => exportToCSV(
+                filtered,
+                [
+                  { key: 'userName', label: t('tableHeaders.name') },
+                  { key: 'userPhone', label: t('tableHeaders.phone') },
+                  { key: 'courseTitle', label: t('tableHeaders.course') },
+                  { key: 'status', label: t('tableHeaders.status') },
+                  { key: 'totalFee', label: 'Fee' },
+                  { key: 'paidAmount', label: 'Paid' },
+                  { key: 'dueAmount', label: 'Due' },
+                  { key: 'discount', label: 'Discount' },
+                  { key: 'enrolledAt', label: t('tableHeaders.enrolled') },
+                ],
+                'enrollments.csv',
+              )}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+            >
+              <Download className="size-4" />
+              CSV
+            </button>
+          )}
+        </div>
         <button
           onClick={() => {
             setShowAdd(true)
@@ -423,6 +469,17 @@ export function EnrollmentsPanel({
             value: filter,
             onChange: (value) => {
               setFilter(value)
+              resetPage()
+            },
+          },
+          {
+            name: 'course',
+            label: 'কোর্স',
+            type: 'select',
+            options: activeCourses.map((c) => ({ value: c.id, label: c.title })),
+            value: courseFilter === 'all' ? '' : courseFilter,
+            onChange: (value) => {
+              setCourseFilter(value || 'all')
               resetPage()
             },
           },
@@ -884,40 +941,49 @@ export function EnrollmentsPanel({
                 <th className="px-4 py-3 text-center font-semibold text-foreground w-12">
                   <input
                     type="checkbox"
-                    checked={
-                      selectedIds.length === paged.length && paged.length > 0
-                    }
+                    checked={selectedIds.length === paged.length && paged.length > 0}
                     onChange={toggleSelectAll}
                     className="size-4 rounded border-border text-brand focus:ring-brand"
                   />
                 </th>
-                <th className="px-4 py-3 text-left font-semibold text-foreground">
-                  {t('tableHeaders.student')}
+                {([
+                  ['userName', t('tableHeaders.student')],
+                  ['phone', t('tableHeaders.phone')],
+                  ['courseTitle', t('tableHeaders.course')],
+                ] as const).map(([key, label]) => (
+                  <th key={key} className="px-4 py-3 text-left font-semibold text-foreground cursor-pointer select-none hover:text-brand" onClick={() => {
+                    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                    else { setSortKey(key); setSortDir('asc') }
+                  }}>
+                    <span className="inline-flex items-center gap-1">
+                      {label}
+                      {sortKey === key && <span className="text-xs">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </span>
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-center font-semibold text-foreground">{t('tableHeaders.discount')}</th>
+                {(['totalFee', 'dueAmount'] as const).map((key) => (
+                  <th key={key} className="px-4 py-3 text-center font-semibold text-foreground cursor-pointer select-none hover:text-brand" onClick={() => {
+                    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                    else { setSortKey(key); setSortDir('asc') }
+                  }}>
+                    <span className="inline-flex items-center gap-1">
+                      {key === 'totalFee' ? t('tableHeaders.totalFee') : t('tableHeaders.payment')}
+                      {sortKey === key && <span className="text-xs">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                    </span>
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-center font-semibold text-foreground">{t('tableHeaders.due')}</th>
+                <th className="px-4 py-3 text-center font-semibold text-foreground cursor-pointer select-none hover:text-brand" onClick={() => {
+                  if (sortKey === 'status') setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                  else { setSortKey('status'); setSortDir('asc') }
+                }}>
+                  <span className="inline-flex items-center gap-1">
+                    {t('tableHeaders.status')}
+                    {sortKey === 'status' && <span className="text-xs">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                  </span>
                 </th>
-                <th className="px-4 py-3 text-left font-semibold text-foreground">
-                  {t('tableHeaders.phone')}
-                </th>
-                <th className="px-4 py-3 text-left font-semibold text-foreground">
-                  {t('tableHeaders.course')}
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-foreground">
-                  {t('tableHeaders.discount')}
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-foreground">
-                  {t('tableHeaders.totalFee')}
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-foreground">
-                  {t('tableHeaders.payment')}
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-foreground">
-                  {t('tableHeaders.due')}
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-foreground">
-                  {t('tableHeaders.status')}
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-foreground">
-                  {t('tableHeaders.actions')}
-                </th>
+                <th className="px-4 py-3 text-center font-semibold text-foreground">{t('tableHeaders.actions')}</th>
               </tr>
             </thead>
             <tbody>

@@ -10,12 +10,16 @@ import {
   Loader2,
   Upload,
   Key,
+  Download,
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { Student } from './types'
 import { useToast } from '@/components/ui/toast'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FilterBar } from '@/components/ui/filter-bar'
+import { DataTablePagination } from '@/components/ui/data-table'
+import { exportToCSV } from '@/lib/csv-export'
+import { StudentProfileModal } from './student-profile-modal'
 
 function resizeImage(
   file: File,
@@ -384,6 +388,10 @@ export function StudentsPanel({
   const [newPassword, setNewPassword] = useState('')
   const [resetError, setResetError] = useState('')
   const [resetSaving, setResetSaving] = useState(false)
+  const [profileStudent, setProfileStudent] = useState<Student | null>(null)
+  const [enrollmentFilter, setEnrollmentFilter] = useState<string>('all')
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const { success, error, confirm } = useToast()
 
   function handleEdit(s: Student) {
@@ -525,6 +533,11 @@ export function StudentsPanel({
 
   const filtered = students
     .filter((s) => s.role === 'student')
+    .filter((s) => {
+      if (enrollmentFilter === 'admitted') return !!s.admissionId
+      if (enrollmentFilter === 'non-admitted') return !s.admissionId
+      return true
+    })
     .filter(
       (s) =>
         !search ||
@@ -532,6 +545,7 @@ export function StudentsPanel({
           (f || '').toLowerCase().includes(search.toLowerCase()),
         ),
     )
+  const paginated = filtered.slice(page * pageSize, (page + 1) * pageSize)
 
   return (
     <div className="space-y-4">
@@ -539,16 +553,38 @@ export function StudentsPanel({
         <h3 className="font-heading text-lg font-bold text-foreground">
           {t('management')}
         </h3>
-        <button
-          onClick={() => {
-            setShowForm(true)
-            setEditing(null)
-            setForm(emptyForm())
-          }}
-          className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand/90"
-        >
-          <Plus className="size-4" /> {t('newStudent')}
-        </button>
+        <div className="flex items-center gap-2">
+          {filtered.length > 0 && (
+            <button
+              onClick={() => exportToCSV(
+                filtered,
+                [
+                  { key: 'name', label: t('tableHeaders.name') },
+                  { key: 'email', label: t('tableHeaders.email') },
+                  { key: 'phoneNumber', label: t('tableHeaders.phone') },
+                  { key: 'district', label: t('tableHeaders.district') },
+                  { key: 'studentId', label: t('tableHeaders.studentId') },
+                  { key: 'role', label: t('tableHeaders.role') },
+                ],
+                'students.csv',
+              )}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+            >
+              <Download className="size-4" />
+              CSV
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setShowForm(true)
+              setEditing(null)
+              setForm(emptyForm())
+            }}
+            className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand/90"
+          >
+            <Plus className="size-4" /> {t('newStudent')}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -819,6 +855,20 @@ export function StudentsPanel({
         searchPlaceholder={t('searchPlaceholder')}
         searchValue={search}
         onSearchChange={setSearch}
+        filters={[
+          {
+            name: 'enrollment',
+            label: t('enrollmentStatus'),
+            type: 'select',
+            value: enrollmentFilter === 'all' ? '' : enrollmentFilter,
+            onChange: (v) => { setEnrollmentFilter(v || 'all'); setPage(0) },
+            options: [
+              { value: 'all', label: t('filterAll') },
+              { value: 'admitted', label: t('filterAdmitted') },
+              { value: 'non-admitted', label: t('filterNonAdmitted') },
+            ],
+          },
+        ]}
       />
 
       {resettingStudent && (
@@ -921,26 +971,29 @@ export function StudentsPanel({
                   </td>
                 </tr>
               ) : (
-                filtered.map((s) => (
+                paginated.map((s) => (
                   <tr
                     key={s.id}
                     className="border-b border-border last:border-0 transition-colors hover:bg-secondary/50"
                   >
                     <td className="px-4 py-3 font-medium text-foreground">
-                      <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setProfileStudent(s)}
+                        className="flex items-center gap-3 text-left hover:underline"
+                      >
                         {s.image ? (
                           <img
                             src={s.image}
                             alt={s.name}
-                            className="size-10 rounded-full object-cover border border-border"
+                            className="size-10 rounded-full object-cover border border-border shrink-0"
                           />
                         ) : (
-                          <div className="flex size-10 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-muted-foreground">
+                          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-muted-foreground">
                             {s.name.charAt(0).toUpperCase()}
                           </div>
                         )}
                         <span>{s.name}</span>
-                      </div>
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {s.email}
@@ -1003,7 +1056,23 @@ export function StudentsPanel({
             </tbody>
           </table>
         </div>
+        {filtered.length > 0 && (
+          <DataTablePagination
+            currentPage={page + 1}
+            totalPages={Math.ceil(filtered.length / pageSize)}
+            pageSize={pageSize}
+            totalItems={filtered.length}
+            onPageChange={(p) => setPage(p - 1)}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(0) }}
+          />
+        )}
       </div>
+
+      <StudentProfileModal
+        student={profileStudent}
+        isOpen={!!profileStudent}
+        onClose={() => setProfileStudent(null)}
+      />
     </div>
   )
 }

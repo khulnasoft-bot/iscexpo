@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Save, X, Clock, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Save, X, Clock, Loader2, Copy, Download } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { EmptyState } from '@/components/ui/empty-state'
 import { FilterBar } from '@/components/ui/filter-bar'
 import { ExamStatusBadge } from '@/components/ui/status-badge'
 import { useToast } from '@/components/ui/toast'
+import { DataTablePagination } from '@/components/ui/data-table'
+import { exportToCSV } from '@/lib/csv-export'
 import type { Exam, ExamSubmission } from './types'
 
 export function ExamsPanel({
@@ -20,12 +22,17 @@ export function ExamsPanel({
 }) {
   const t = useTranslations('admin.exams')
   const [showExamForm, setShowExamForm] = useState(false)
+  const [editingExam, setEditingExam] = useState<string | null>(null)
   const [examForm, setExamForm] = useState({
     title: '',
     subject: '',
     duration: 15,
     difficulty: 'medium' as 'easy' | 'medium' | 'hard',
   })
+  const [examPage, setExamPage] = useState(0)
+  const [examPageSize, setExamPageSize] = useState(10)
+  const [subPage, setSubPage] = useState(0)
+  const [subPageSize, setSubPageSize] = useState(10)
   const [saving, setSaving] = useState(false)
   const [subjects, setSubjects] = useState<{ name: string }[]>([])
   const { confirm } = useToast()
@@ -58,24 +65,24 @@ export function ExamsPanel({
     if (!examForm.title.trim()) return
     setSaving(true)
     try {
-      await fetch('/api/exams', {
-        method: 'POST',
+      const method = editingExam ? 'PUT' : 'POST'
+      const url = editingExam ? `/api/exams/${editingExam}` : '/api/exams'
+      await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(examForm),
       })
-      setExamForm({
-        title: '',
-        subject: subjects[0]?.name || '',
-        duration: 15,
-        difficulty: 'medium',
-      })
+      setExamForm({ title: '', subject: subjects[0]?.name || '', duration: 15, difficulty: 'medium' })
       setShowExamForm(false)
+      setEditingExam(null)
       onRefresh()
-    } catch (error) {
-      console.error('Failed to create exam:', error)
-    } finally {
-      setSaving(false)
-    }
+    } catch { /* ignore */ } finally { setSaving(false) }
+  }
+
+  function handleCloneExam(exam: Exam) {
+    setExamForm({ title: `${exam.title} (Copy)`, subject: exam.subject, duration: exam.duration, difficulty: exam.difficulty })
+    setEditingExam(null)
+    setShowExamForm(true)
   }
 
   async function handleDeleteExam(id: string) {
@@ -221,6 +228,25 @@ export function ExamsPanel({
           <EmptyState title={t('emptyExams')} />
         ) : (
           <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="flex items-center justify-end px-4 pt-3 pb-2">
+              <button
+                onClick={() => exportToCSV(
+                  exams,
+                  [
+                    { key: 'title', label: t('tableHeaders.exam') },
+                    { key: 'subject', label: t('tableHeaders.subject') },
+                    { key: 'duration', label: t('tableHeaders.duration') },
+                    { key: 'questionCount', label: t('tableHeaders.questions') },
+                    { key: 'difficulty', label: t('tableHeaders.difficulty') },
+                  ],
+                  'exams.csv',
+                )}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+              >
+                <Download className="size-4" />
+                CSV
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -238,6 +264,9 @@ export function ExamsPanel({
                       {t('tableHeaders.questions')}
                     </th>
                     <th className="px-4 py-3 text-center font-semibold text-foreground">
+                      {t('tableHeaders.submissions')}
+                    </th>
+                    <th className="px-4 py-3 text-center font-semibold text-foreground">
                       {t('tableHeaders.difficulty')}
                     </th>
                     <th className="px-4 py-3 text-center font-semibold text-foreground">
@@ -249,7 +278,7 @@ export function ExamsPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {exams.map((e) => (
+                  {exams.slice(examPage * examPageSize, (examPage + 1) * examPageSize).map((e) => (
                     <tr
                       key={e.id}
                       className="border-b border-border last:border-0 transition-colors hover:bg-secondary/50"
@@ -262,12 +291,17 @@ export function ExamsPanel({
                           {e.subject}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center text-muted-foreground flex items-center justify-center gap-1">
-                        <Clock className="size-3.5" />
-                        {e.duration} {t('minutes')}
+                      <td className="px-4 py-3 text-center text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="size-3.5" />
+                          {e.duration} {t('minutes')}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-center text-foreground">
                         {e.questionCount ?? 0}
+                      </td>
+                      <td className="px-4 py-3 text-center text-foreground">
+                        {submissions.filter((s) => s.examId === e.id).length}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span
@@ -280,24 +314,41 @@ export function ExamsPanel({
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => toggleActive(e.id, e.isActive)}
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold cursor-pointer transition-colors ${e.isActive ? 'bg-green/10 text-green' : 'bg-secondary text-muted-foreground hover:bg-secondary'}`}
+                          className="inline-flex cursor-pointer transition-colors"
                         >
-                          {e.isActive ? t('statusActive') : t('statusInactive')}
+                          <ExamStatusBadge status={e.isActive ? 'active' : 'inactive'} />
                         </button>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <button
-                          onClick={() => handleDeleteExam(e.id)}
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleCloneExam(e)}
+                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                            title={t('clone')}
+                          >
+                            <Copy className="size-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteExam(e.id)}
+                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <DataTablePagination
+              currentPage={examPage + 1}
+              totalPages={Math.ceil(exams.length / examPageSize)}
+              pageSize={examPageSize}
+              totalItems={exams.length}
+              onPageChange={(p) => setExamPage(p - 1)}
+              onPageSizeChange={(s) => { setExamPageSize(s); setExamPage(0) }}
+            />
           </div>
         )}
       </div>
@@ -348,7 +399,7 @@ export function ExamsPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSubmissions.map((s) => {
+                  {filteredSubmissions.slice(subPage * subPageSize, (subPage + 1) * subPageSize).map((s) => {
                     const pct =
                       s.total > 0 ? Math.round((s.score / s.total) * 100) : 0
                     const exam = exams.find((e) => e.id === s.examId)
@@ -383,6 +434,14 @@ export function ExamsPanel({
                 </tbody>
               </table>
             </div>
+            <DataTablePagination
+              currentPage={subPage + 1}
+              totalPages={Math.ceil(filteredSubmissions.length / subPageSize)}
+              pageSize={subPageSize}
+              totalItems={filteredSubmissions.length}
+              onPageChange={(p) => setSubPage(p - 1)}
+              onPageSizeChange={(s) => { setSubPageSize(s); setSubPage(0) }}
+            />
           </div>
         )}
       </div>
