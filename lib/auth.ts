@@ -81,10 +81,12 @@ function createAuth(): any {
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL || 'http://localhost:3000',
     secret: env.BETTER_AUTH_SECRET,
-    trustedOrigins: async (request: Request) => {
+    trustedOrigins: async (request?: Request) => {
       const origins = getStaticTrustedOrigins(env)
-      const origin = request.headers.get('origin')
-      if (origin) origins.push(origin)
+      if (request) {
+        const origin = request.headers.get('origin')
+        if (origin) origins.push(origin)
+      }
       return origins
     },
     database: drizzleAdapter(db, {
