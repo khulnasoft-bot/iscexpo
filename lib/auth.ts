@@ -42,23 +42,23 @@ async function sendSupabaseSMS(phoneNumber: string, code: string) {
   }
 }
 
-function getTrustedOrigins(env: ReturnType<typeof validateEnv>) {
+function getStaticTrustedOrigins(env: ReturnType<typeof validateEnv>) {
   const configured =
     env.BETTER_AUTH_TRUSTED_ORIGINS?.split(',')
       .map((origin) => origin.trim())
       .filter(Boolean) ?? []
 
   const defaults = [
-    'http://localhost:3000',
-    'https://localhost:3000',
-    'http://127.0.0.1:3000',
-    'https://127.0.0.1:3000',
-    'http://0.0.0.0:3000',
-    'https://0.0.0.0:3000',
-    'http://[::1]:3000',
-    'https://[::1]:3000',
-
+    'http://localhost:*',
+    'https://localhost:*',
+    'http://127.0.0.1:*',
+    'https://127.0.0.1:*',
+    'http://0.0.0.0:*',
+    'https://0.0.0.0:*',
+    'http://[::1]:*',
+    'https://[::1]:*',
   ]
+
   const normalized = new Set<string>()
 
   for (const origin of [
@@ -81,7 +81,12 @@ function createAuth(): any {
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL || 'http://localhost:3000',
     secret: env.BETTER_AUTH_SECRET,
-    trustedOrigins: getTrustedOrigins(env),
+    trustedOrigins: async (request: Request) => {
+      const origins = getStaticTrustedOrigins(env)
+      const origin = request.headers.get('origin')
+      if (origin) origins.push(origin)
+      return origins
+    },
     database: drizzleAdapter(db, {
       provider: 'pg',
       schema,

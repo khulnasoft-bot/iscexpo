@@ -11,10 +11,23 @@ import {
   Calendar,
   TrendingUp,
   FileText,
-  Filter,
   Clock,
   CheckCircle,
 } from 'lucide-react'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from 'recharts'
+import { DateRangePicker } from '@/components/ui/date-range-picker'
 import type {
   Enrollment,
   Payment,
@@ -429,7 +442,7 @@ export function ReportsPanel({
               />
             </div>
             <ChartCard title={t('charts.monthlyEnrollmentTrend')}>
-              <BarChart data={enrollmentTrends} xKey="period" yKey="count" />
+              <SimpleBarChart data={enrollmentTrends} xKey="period" yKey="count" />
             </ChartCard>
             <DataTable
               headers={[
@@ -713,22 +726,12 @@ export function ReportsPanel({
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={dateRange.start}
-            onChange={(e) =>
-              setDateRange((prev) => ({ ...prev, start: e.target.value }))
-            }
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-          />
-          <span className="text-muted-foreground">{t('dateRangeFrom')}</span>
-          <input
-            type="date"
-            value={dateRange.end}
-            onChange={(e) =>
-              setDateRange((prev) => ({ ...prev, end: e.target.value }))
-            }
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          <DateRangePicker
+            startDate={dateRange.start}
+            endDate={dateRange.end}
+            onStartDateChange={(d) => setDateRange((p) => ({ ...p, start: d }))}
+            onEndDateChange={(d) => setDateRange((p) => ({ ...p, end: d }))}
+            showPresets
           />
           <button
             onClick={handleExport}
@@ -850,7 +853,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
   )
 }
 
-function BarChart({
+function SimpleBarChart({
   data,
   xKey,
   yKey,
@@ -859,67 +862,32 @@ function BarChart({
   xKey: string
   yKey: string
 }) {
-  const maxValue = Math.max(...data.map((d) => d[yKey]), 1)
+  const COLORS = ['#2563eb', '#16a34a', '#eab308', '#dc2626', '#8b5cf6']
   return (
-    <div className="h-64 flex items-end justify-around gap-1 px-2">
-      {data.map((d, i) => {
-        const height = (d[yKey] / maxValue) * 240
-        return (
-          <div key={i} className="flex flex-col items-center flex-1">
-            <div
-              className="w-full bg-brand rounded-t transition-all hover:bg-brand/80"
-              style={{ height: `${height}px` }}
-              title={`${d[xKey]}: ${d[yKey]}`}
-            />
-            <span className="text-xs text-muted-foreground mt-2">
-              {d[xKey]}
-            </span>
-            <span className="text-xs font-medium text-foreground">
-              {d[yKey]}
-            </span>
-          </div>
-        )
-      })}
-    </div>
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis dataKey={xKey} tick={{ fontSize: 12 }} />
+        <YAxis tick={{ fontSize: 12 }} />
+        <Tooltip />
+        <Bar dataKey={yKey} fill={COLORS[0]} radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
 
 function RevenueChart({ data }: { data: RevenueReport[] }) {
-  const t = useTranslations('admin.reports')
-  const maxValue = Math.max(...data.map((d) => d.total), 1)
   return (
-    <div className="h-64 flex items-end justify-around gap-1 px-2">
-      {data.map((d, i) => (
-        <div key={i} className="flex flex-col items-center flex-1">
-          <div
-            className="w-full flex flex-col-reverse"
-            style={{ height: '240px' }}
-          >
-            <div
-              className="bg-green rounded-t transition-all hover:bg-green/80"
-              style={{ height: `${(d.verified / maxValue) * 240}px` }}
-              title={`${d.period} ${t('dataTableHeaders.verified')}: ${d.verified}`}
-            />
-            <div
-              className="bg-gold rounded-t transition-all hover:bg-gold/80"
-              style={{ height: `${(d.pending / maxValue) * 240}px` }}
-              title={`${d.period} ${t('dataTableHeaders.pending')}: ${d.pending}`}
-            />
-          </div>
-          <span className="text-xs text-muted-foreground mt-2">{d.period}</span>
-        </div>
-      ))}
-      <div className="flex items-center gap-4 ml-4 text-xs">
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded bg-green" />{' '}
-          {t('dataTableHeaders.verified')}
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded bg-gold" />{' '}
-          {t('dataTableHeaders.pending')}
-        </span>
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis dataKey="period" tick={{ fontSize: 12 }} />
+        <YAxis tick={{ fontSize: 12 }} />
+        <Tooltip />
+        <Bar dataKey="verified" fill="#16a34a" radius={[4, 4, 0, 0]} stackId="a" />
+        <Bar dataKey="pending" fill="#eab308" radius={[4, 4, 0, 0]} stackId="a" />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
 
@@ -931,64 +899,22 @@ function AttendanceChart({ data }: { data: AttendanceStats[] }) {
     )
   const present = data.reduce((s, d) => s + d.present + d.late, 0)
   const absent = data.reduce((s, d) => s + d.absent, 0)
-  const total = present + absent
+  const pieData = [
+    { name: t('attendancePresent'), value: present, color: '#16a34a' },
+    { name: t('attendanceAbsent'), value: absent, color: '#dc2626' },
+  ]
   return (
-    <div className="h-64 flex items-center justify-center gap-8">
-      <div className="flex flex-col items-center">
-        <div className="relative w-40 h-40">
-          <svg className="w-full h-full -rotate-90">
-            <circle
-              cx="80"
-              cy="80"
-              r="70"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="16"
-              className="text-muted-foreground/20"
-            />
-            <circle
-              cx="80"
-              cy="80"
-              r="70"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="16"
-              strokeDasharray={`${(present / total) * 439.8} 439.8`}
-              strokeLinecap="round"
-              className="text-green"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center flex-col">
-            <span className="text-3xl font-bold text-foreground">
-              {total > 0 ? Math.round((present / total) * 100) : 0}%
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {t('charts.attendanceOverview')}
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="space-y-4 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-green" />
-          <span>
-            {t('attendancePresent')}: {present}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-gold" />
-          <span>
-            {t('attendanceLate')}: {data.reduce((s, d) => s + d.late, 0)}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-destructive" />
-          <span>
-            {t('attendanceAbsent')}: {absent}
-          </span>
-        </div>
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={260}>
+      <PieChart>
+        <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" label>
+          {pieData.map((entry, i) => (
+            <Cell key={i} fill={entry.color} />
+          ))}
+        </Pie>
+        <Tooltip />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
   )
 }
 
@@ -999,25 +925,15 @@ function CourseAnalyticsChart({ data }: { data: CourseAnalytics[] }) {
       <p className="text-center text-muted-foreground py-8">{t('noCourses')}</p>
     )
   return (
-    <div className="h-64 flex items-end justify-around gap-1 px-2 overflow-x-auto">
-      {data.map((d, i) => (
-        <div key={i} className="flex flex-col items-center flex-1 min-w-[60px]">
-          <div
-            className="w-full bg-brand rounded-t transition-all hover:bg-brand/80"
-            style={{
-              height: `${Math.max(40, (d.totalEnrollments / Math.max(...data.map((x) => x.totalEnrollments), 1)) * 240)}px`,
-            }}
-            title={`${d.courseTitle}: ${d.totalEnrollments} ${t('stats.totalEnrollments')}`}
-          />
-          <span className="text-xs text-muted-foreground mt-2 text-center truncate w-full">
-            {d.courseTitle}
-          </span>
-          <span className="text-xs font-medium text-foreground">
-            {d.totalEnrollments}
-          </span>
-        </div>
-      ))}
-    </div>
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis dataKey="courseTitle" tick={{ fontSize: 12 }} />
+        <YAxis tick={{ fontSize: 12 }} />
+        <Tooltip />
+        <Bar dataKey="totalEnrollments" fill="#2563eb" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
 
@@ -1031,22 +947,14 @@ function PerformanceChart({ data }: { data: StudentPerformance[] }) {
     .sort((a, b) => b.averageScore - a.averageScore)
     .slice(0, 10)
   return (
-    <div className="h-64 flex items-end justify-around gap-1 px-2">
-      {sorted.map((d, i) => (
-        <div key={i} className="flex flex-col items-center flex-1 min-w-[50px]">
-          <div
-            className="w-full bg-brand rounded-t transition-all hover:bg-brand/80"
-            style={{ height: `${(d.averageScore / 100) * 240}px` }}
-            title={`${d.studentName}: ${d.averageScore}%`}
-          />
-          <span className="text-xs text-muted-foreground mt-2 text-center truncate w-full">
-            {d.studentName}
-          </span>
-          <span className="text-xs font-medium text-foreground">
-            {d.averageScore}%
-          </span>
-        </div>
-      ))}
-    </div>
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={sorted}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+        <XAxis dataKey="studentName" tick={{ fontSize: 12 }} />
+        <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
+        <Tooltip />
+        <Bar dataKey="averageScore" fill="#2563eb" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
   )
 }

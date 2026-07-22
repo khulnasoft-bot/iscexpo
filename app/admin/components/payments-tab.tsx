@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, useMemo, type FormEvent } from 'react'
 import { useTranslations } from 'next-intl'
-import { Check, Loader2, Plus, XCircle } from 'lucide-react'
+import { Check, Loader2, Plus, XCircle, Download } from 'lucide-react'
 import { PaymentStatusBadge, MethodBadge } from '@/components/ui/status-badge'
 import { FilterBar } from '@/components/ui/filter-bar'
 import { Alert } from '@/components/ui/alert'
+import { DataTablePagination } from '@/components/ui/data-table'
+import { exportToCSV } from '@/lib/csv-export'
 import {
   getPaymentValidationErrors,
   type PaymentFormValues,
@@ -25,6 +27,10 @@ export function PaymentsPanel({
 }) {
   const t = useTranslations('admin.payments')
   const [filter, setFilter] = useState('all')
+  const [methodFilter, setMethodFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [updating, setUpdating] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -41,8 +47,26 @@ export function PaymentsPanel({
     Partial<Record<keyof PaymentFormValues, string>>
   >({})
 
-  const filtered =
-    filter === 'all' ? payments : payments.filter((p) => p.status === filter)
+  const filtered = useMemo(() => {
+    let result = filter === 'all' ? payments : payments.filter((p) => p.status === filter)
+    if (methodFilter !== 'all') result = result.filter((p) => p.method === methodFilter)
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      result = result.filter(
+        (p) =>
+          (p.transactionId || '').toLowerCase().includes(q) ||
+          (p.senderNumber || '').toLowerCase().includes(q),
+      )
+    }
+    return result
+  }, [payments, filter, methodFilter, searchQuery])
+
+  const paginated = useMemo(() => {
+    const start = page * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const payableEnrollments = enrollments.filter(
     (enrollment) => enrollment.dueAmount > 0,
   )
@@ -141,16 +165,40 @@ export function PaymentsPanel({
         <h3 className="font-heading text-lg font-bold text-foreground">
           {t('management')}
         </h3>
-        <button
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand/90"
-        >
-          <Plus className="size-4" /> {t('newPayment')}
-        </button>
+        <div className="flex items-center gap-2">
+          {payments.length > 0 && (
+            <button
+              onClick={() => exportToCSV(
+                filtered,
+                [
+                  { key: 'paidAt', label: t('tableHeaders.date') },
+                  { key: 'amount', label: t('tableHeaders.amount') },
+                  { key: 'method', label: t('tableHeaders.method') },
+                  { key: 'transactionId', label: t('tableHeaders.transactionId') },
+                  { key: 'senderNumber', label: t('tableHeaders.sender') },
+                  { key: 'status', label: t('tableHeaders.status') },
+                ],
+                'payments.csv',
+              )}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+            >
+              <Download className="size-4" />
+              CSV
+            </button>
+          )}
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-brand-foreground transition-colors hover:bg-brand/90"
+          >
+            <Plus className="size-4" /> {t('newPayment')}
+          </button>
+        </div>
       </div>
 
       <FilterBar
         searchPlaceholder={t('searchPlaceholder')}
+        searchValue={searchQuery}
+        onSearchChange={(v) => { setSearchQuery(v); setPage(0) }}
         filters={[
           {
             name: 'status',
@@ -162,9 +210,23 @@ export function PaymentsPanel({
               { value: 'rejected', label: t('statusRejected') },
             ],
             value: filter === 'all' ? '' : filter,
-            onChange: (value) => setFilter(value || 'all'),
+            onChange: (value) => { setFilter(value || 'all'); setPage(0) },
+          },
+          {
+            name: 'method',
+            label: t('tableHeaders.method'),
+            type: 'select',
+            options: [
+              { value: 'bkash', label: 'bKash' },
+              { value: 'nagad', label: 'Nagad' },
+              { value: 'cash', label: 'Cash' },
+              { value: 'bank', label: 'Bank' },
+            ],
+            value: methodFilter === 'all' ? '' : methodFilter,
+            onChange: (value) => { setMethodFilter(value || 'all'); setPage(0) },
           },
         ]}
+        onClearFilters={() => { setFilter('all'); setMethodFilter('all'); setSearchQuery(''); setPage(0) }}
       />
 
       {feedback && (
@@ -210,7 +272,7 @@ export function PaymentsPanel({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => {
+              {paginated.map((p) => {
                 const enrollment = enrollments.find(
                   (item) => item.id === p.enrollmentId,
                 )
@@ -275,6 +337,16 @@ export function PaymentsPanel({
             </tbody>
           </table>
         </div>
+        {filtered.length > 0 && (
+          <DataTablePagination
+            currentPage={page + 1}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filtered.length}
+            onPageChange={(p) => setPage(p - 1)}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(0) }}
+          />
+        )}
       </div>
 
       {showCreateModal && (
